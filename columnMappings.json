@@ -1,0 +1,24 @@
+{
+  "mappings": [
+    {
+      "excelColumn": "EmployeeId",
+      "sqlColumn": "EmployeeId"
+    },
+    {
+      "excelColumn": "Name",
+      "sqlColumn": "Name"
+    },
+    {
+      "excelColumn": "Address",
+      "sqlColumn": "Address"
+    },
+    {
+      "excelColumn": "Gender",
+      "sqlColumn": "Gender"
+    },
+    {
+      "excelColumn": "Department",
+      "sqlColumn": "Department"
+    }
+  ]
+}
