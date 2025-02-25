@@ -1,7 +1,6 @@
 ﻿using System;
 using System.IO;
 using System.IO.Compression;
-using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Azure.Storage.Blobs;
@@ -36,9 +35,9 @@ namespace SmarTrak
 
                 using var memoryStream = new MemoryStream();
                 await blob.DownloadToAsync(memoryStream);
-                memoryStream.Position = 0;
+                memoryStream.Position = 0; // Ensure seekable stream
 
-                using var archive = new ZipArchive(memoryStream, ZipArchiveMode.Read);
+                using var archive = new ZipArchive(new MemoryStream(memoryStream.ToArray()), ZipArchiveMode.Read);
                 foreach (var entry in archive.Entries)
                 {
                     if (entry.FullName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
@@ -46,10 +45,18 @@ namespace SmarTrak
                         logger.LogInformation($"Extracting file: {entry.FullName}");
 
                         using var xlsxStream = entry.Open();
-                        var result = await ExcelProcessor.ProcessXlsx(xlsxStream);
+                        using var extractedStream = new MemoryStream();
+                        await xlsxStream.CopyToAsync(extractedStream);
+                        extractedStream.Position = 0; // Reset position for reading
+
+                        var result = await ExcelProcessor.ProcessXlsx(extractedStream);
                         logger.LogInformation($"Processed {result} records from {entry.FullName}");
                     }
                 }
+            }
+            catch (InvalidDataException ex)
+            {
+                logger.LogError($"Invalid ZIP file format: {ex.Message}");
             }
             catch (Exception ex)
             {
