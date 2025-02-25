@@ -39,7 +39,7 @@ namespace SmarTrak
         {
             using var ms = new MemoryStream(excelData);
             using var reader = ExcelReaderFactory.CreateReader(ms);
-            using var conn = new SqlConnection(Environment.GetEnvironmentVariable("SQL_CONNECTION_STRING"));
+            using var conn = new SqlConnection(Environment.GetEnvironmentVariable("SQLConnectionString"));
             await conn.OpenAsync();
             using var transaction = await conn.BeginTransactionAsync();
             try
