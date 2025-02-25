@@ -11,7 +11,7 @@ namespace SmarTrak
     {
         [Function("BlobTriggerFunction")]
         public static async Task Run(
-            [BlobTrigger("zip-container/{name}", Connection = "AzureWebJobsBlobStorage")] byte[] zipData,
+            [BlobTrigger("zip-container/{name}", Connection = "AzureWebJobsStorage")] byte[] zipData,
             string name,
             FunctionContext context,
             [Microsoft.Azure.Functions.Worker.DurableClient] IDurableOrchestrationClient orchestrationClient)
