@@ -42,7 +42,7 @@ namespace SmarTrak.Services
             using (var connection = new SqlConnection(connectionString))
             {
                 await connection.OpenAsync();
-                using (var command = new SqlCommand("INSERT INTO Employees (EmployeeId, Name, Address, Gender, Department) VALUES (@EmployeeId, @Name, @Address, @Gender, @Department)", connection))
+                using (var command = new SqlCommand("INSERT INTO Employee (EmployeeId, Name, Address, Gender, Department) VALUES (@EmployeeId, @Name, @Address, @Gender, @Department)", connection))
                 {
                     command.Parameters.AddWithValue("@EmployeeId", employeeId);
                     command.Parameters.AddWithValue("@Name", name);
