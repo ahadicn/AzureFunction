@@ -22,19 +22,17 @@ namespace SmarTrak
             logger.LogInformation("Splitting blob into batches.");
 
             var batches = new List<byte[]>();
-            using (var zipStream = new MemoryStream(blobContent))
-            using (var archive = new ZipArchive(zipStream, ZipArchiveMode.Read))
+            using var zipStream = new MemoryStream(blobContent);
+            using var archive = new ZipArchive(zipStream, ZipArchiveMode.Read);
+
+            foreach (var entry in archive.Entries)
             {
-                foreach (var entry in archive.Entries)
+                if (entry.FullName.EndsWith(".xlsx"))
                 {
-                    if (entry.FullName.EndsWith(".xlsx"))
-                    {
-                        using (var entryStream = new MemoryStream())
-                        {
-                            entry.Open().CopyTo(entryStream);
-                            batches.Add(entryStream.ToArray());
-                        }
-                    }
+                    using var entryStream = entry.Open();
+                    using var memoryStream = new MemoryStream();
+                    entryStream.CopyTo(memoryStream);
+                    batches.Add(memoryStream.ToArray());
                 }
             }
             return batches;
@@ -46,22 +44,15 @@ namespace SmarTrak
             FunctionContext context)
         {
             var logger = context.GetLogger("ProcessBatch");
-            logger.LogInformation("Processing batch.");
-
-            using (var batchStream = new MemoryStream(batchContent))
-            {
-                // Your existing code to process Excel files and insert data into the database
-                await ProcessExcel(batchStream, logger);
-            }
+            using var batchStream = new MemoryStream(batchContent);
+            await ProcessExcel(batchStream, logger);
         }
 
         private static async Task ProcessExcel(Stream excelStream, ILogger logger)
         {
             logger.LogInformation("Processing Excel file.");
-
             try
             {
-                // Load column mappings from JSON file
                 var columnMappings = await LoadColumnMappingsAsync("columnMappings.json");
                 if (columnMappings == null)
                 {
@@ -69,31 +60,20 @@ namespace SmarTrak
                     return;
                 }
 
-                ExcelPackage.LicenseContext = LicenseContext.NonCommercial; // Required for EPPlus
+                ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
                 using var package = new ExcelPackage(excelStream);
                 var worksheet = package.Workbook.Worksheets[0];
 
                 int rowCount = worksheet.Dimension.Rows;
-                var headerRow = worksheet.Cells[1, 1, 1, worksheet.Dimension.Columns];
-
-                // Create a dictionary to map column names to their indices
                 var columnIndices = new Dictionary<string, int>();
                 for (int col = 1; col <= worksheet.Dimension.Columns; col++)
                 {
                     var columnName = worksheet.Cells[1, col].Text.Trim();
-                    if (string.IsNullOrEmpty(columnName)) continue; // Skip empty headers
-
-                    // Normalize the column name for better matching
-                    var normalizedExcelColumn = columnName.ToLower().Trim();
-
                     foreach (var mapping in columnMappings.Mappings)
                     {
-                        var normalizedMapping = mapping.ExcelColumn.ToLower().Trim();
-                        if (normalizedExcelColumn == normalizedMapping)
+                        if (columnName.Equals(mapping.ExcelColumn, StringComparison.OrdinalIgnoreCase))
                         {
                             columnIndices[mapping.SqlColumn] = col;
-                            logger.LogInformation($"Mapped Excel Column '{columnName}' to SQL Column '{mapping.SqlColumn}' at index {col}");
-                            break; // Stop checking once matched
                         }
                     }
                 }
@@ -104,50 +84,46 @@ namespace SmarTrak
                     var record = new Dictionary<string, object>();
                     foreach (var mapping in columnMappings.Mappings)
                     {
-                        if (columnIndices.TryGetValue(mapping.ExcelColumn, out int columnIndex))
+                        if (columnIndices.TryGetValue(mapping.SqlColumn, out int columnIndex))
                         {
-                            var cellValue = worksheet.Cells[row, columnIndex].GetValue<object>();
-                            record[mapping.SqlColumn] = cellValue;
-                        }
-                        else
-                        {
-                            logger.LogWarning($"Column '{mapping.ExcelColumn}' not found in Excel file.");
+                            record[mapping.SqlColumn] = worksheet.Cells[row, columnIndex].GetValue<object>();
                         }
                     }
                     records.Add(record);
                 }
 
-                // Retrieve SQL connection string
-                var sqlConnectionString = Environment.GetEnvironmentVariable("SQLConnectionString");
-                if (string.IsNullOrEmpty(sqlConnectionString))
-                {
-                    logger.LogError("SQLConnectionString environment variable is not set.");
-                    return;
-                }
-
-                logger.LogInformation($"Retrieved SQL Connection String: {sqlConnectionString}");
-
-                using var conn = new SqlConnection(sqlConnectionString);
-                await conn.OpenAsync();
-
-                foreach (var record in records)
-                {
-                    var columns = string.Join(", ", record.Keys);
-                    var parameters = string.Join(", ", record.Keys.Select(k => $"@{k}"));
-                    string query = $"INSERT INTO Employee ({columns}) VALUES ({parameters})";
-
-                    using var cmd = new SqlCommand(query, conn);
-                    foreach (var kvp in record)
-                    {
-                        cmd.Parameters.AddWithValue($"@{kvp.Key}", kvp.Value);
-                    }
-                    await cmd.ExecuteNonQueryAsync();
-                    logger.LogInformation($"Inserted record.");
-                }
+                await InsertRecordsIntoDatabase(records, logger);
             }
             catch (Exception ex)
             {
-                logger.LogError($"Error processing Excel file. Exception: {ex.Message}");
+                logger.LogError($"Error processing Excel file: {ex.Message}");
+            }
+        }
+
+        private static async Task InsertRecordsIntoDatabase(List<Dictionary<string, object>> records, ILogger logger)
+        {
+            var connectionString = Environment.GetEnvironmentVariable("SQLConnectionString");
+            if (string.IsNullOrEmpty(connectionString))
+            {
+                logger.LogError("Missing SQL connection string.");
+                return;
+            }
+
+            using var conn = new SqlConnection(connectionString);
+            await conn.OpenAsync();
+            foreach (var record in records)
+            {
+                var columns = string.Join(", ", record.Keys);
+                var parameters = string.Join(", ", record.Keys.Select(k => $"@{k}"));
+                string query = $"INSERT INTO Employee ({columns}) VALUES ({parameters})";
+
+                using var cmd = new SqlCommand(query, conn);
+                foreach (var kvp in record)
+                {
+                    cmd.Parameters.AddWithValue($"@{kvp.Key}", kvp.Value ?? DBNull.Value);
+                }
+                await cmd.ExecuteNonQueryAsync();
+                logger.LogInformation("Inserted record successfully.");
             }
         }
 

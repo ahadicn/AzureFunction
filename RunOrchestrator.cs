@@ -16,29 +16,30 @@ namespace SmarTrak
         public static async Task OrchestratorFunction_HelloSequence(
             [OrchestrationTrigger] TaskOrchestrationContext context)
         {
-            // Deserialize input properly
             var input = context.GetInput<BlobProcessingInputModel>();
-
             if (input == null)
             {
                 throw new ArgumentNullException(nameof(input), "Input is null in the orchestrator function.");
             }
 
-            byte[] blobContent = Convert.FromBase64String(input.BlobBase64);
-            string name = input.Name;
-
-            context.SetCustomStatus($"Orchestrating for blob: {name}");
+            byte[] blobContent;
+            try
+            {
+                blobContent = Convert.FromBase64String(input.BlobBase64);
+            }
+            catch (FormatException ex)
+            {
+                throw new ArgumentException("Invalid Base64 string in the input blob.", ex);
+            }
+            context.SetCustomStatus($"Processing blob: {input.Name}");
 
             try
             {
                 var batches = await context.CallActivityAsync<List<byte[]>>("SplitBlobIntoBatches", blobContent);
-
                 foreach (var batch in batches)
                 {
                     await context.CallActivityAsync("ProcessBatch", batch);
-
-                    var nextBatchTime = context.CurrentUtcDateTime.AddMinutes(1);
-                    await context.CreateTimer(nextBatchTime, CancellationToken.None);
+                    await context.CreateTimer(context.CurrentUtcDateTime.AddMinutes(1), CancellationToken.None);
                 }
             }
             catch (Exception ex)
@@ -48,5 +49,5 @@ namespace SmarTrak
             }
         }
     }
-        
+
 }

@@ -19,7 +19,7 @@ namespace SmarTrak
         // Visit https://aka.ms/sqltrigger to learn how to use this trigger binding
         [Function("Function")]
         public void Run(
-            [SqlTrigger("[dbo].[table1]", "Values:SQLConnectionString")] IReadOnlyList<SqlChange<ToDoItem>> changes,
+            [SqlTrigger("[dbo].[table1]", "SQLConnectionString")] IReadOnlyList<SqlChange<ToDoItem>> changes,
                 FunctionContext context)
         {
             _logger.LogInformation("SQL Changes: " + JsonConvert.SerializeObject(changes));
