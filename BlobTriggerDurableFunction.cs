@@ -25,8 +25,10 @@ namespace SmarTrak
 
             try
             {
-                // 🚀 Pass only blob name to the orchestrator
-                await starter.ScheduleNewOrchestrationInstanceAsync("OrchestratorFunction_HelloSequence", blobName);
+                // ✅ Pass a properly formatted input model instead of just the string
+                var inputModel = new BlobProcessingInputModel { BlobName = blobName };
+
+                await starter.ScheduleNewOrchestrationInstanceAsync("OrchestratorFunction_HelloSequence", inputModel);
                 _logger.LogInformation($"Started Orchestrator for blob: {blobName}");
             }
             catch (Exception ex)
