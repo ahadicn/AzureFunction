@@ -10,5 +10,6 @@ namespace SmarTrak
     {
         public string BlobBase64 { get; set; }
         public string Name { get; set; }
+        public string BlobName { get; set; } // ✅ No more Base64 string
     }
 }

@@ -1,5 +1,4 @@
-using System;
-using System.IO;
+﻿using System;
 using System.Threading.Tasks;
 using Azure.Storage.Blobs;
 using Microsoft.Azure.Functions.Worker;
@@ -11,43 +10,28 @@ namespace SmarTrak
     public class BlobTriggerDurableFunction
     {
         private readonly ILogger<BlobTriggerDurableFunction> _logger;
-        private readonly BlobServiceClient _blobServiceClient;
 
-        public BlobTriggerDurableFunction(ILogger<BlobTriggerDurableFunction> logger, BlobServiceClient blobServiceClient)
+        public BlobTriggerDurableFunction(ILogger<BlobTriggerDurableFunction> logger)
         {
             _logger = logger;
-            _blobServiceClient = blobServiceClient;
         }
 
         [Function("BlobTriggerDurableFunction")]
         public async Task Run(
-            [BlobTrigger("zip-container/{name}")] string blobName,
-            string name,
+            [BlobTrigger("zip-container/{blobName}")] string blobName,
             [DurableClient] DurableTaskClient starter)
         {
-            _logger.LogInformation($"Blob trigger activated: {name}");
+            _logger.LogInformation($"Blob trigger activated: {blobName}");
 
             try
             {
-                var containerClient = _blobServiceClient.GetBlobContainerClient("zip-container");
-                var blobClient = containerClient.GetBlobClient(blobName);
-
-                byte[] blobBytes;
-                using (var memoryStream = new MemoryStream())
-                {
-                    await blobClient.DownloadToAsync(memoryStream);
-                    blobBytes = memoryStream.ToArray();
-                }
-
-                string blobBase64 = Convert.ToBase64String(blobBytes);
-
-                var input = new BlobProcessingInputModel { BlobBase64 = blobBase64, Name = name };
-                await starter.ScheduleNewOrchestrationInstanceAsync("OrchestratorFunction_HelloSequence", input);
-                _logger.LogInformation($"Started Orchestrator for blob: {name}");
+                // 🚀 Pass only blob name to the orchestrator
+                await starter.ScheduleNewOrchestrationInstanceAsync("OrchestratorFunction_HelloSequence", blobName);
+                _logger.LogInformation($"Started Orchestrator for blob: {blobName}");
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error processing blob: {ex.Message}");
+                _logger.LogError($"Error triggering orchestrator: {ex.Message}");
                 throw;
             }
         }

@@ -1,53 +1,40 @@
-using System;
-using System.Collections.Generic;
-using System.Text;
-using System.Text.Json;
-using System.Threading;
-using System.Threading.Tasks;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.DurableTask;
-using Microsoft.Extensions.Logging;
+using SmarTrak;
 
-namespace SmarTrak
+public static class RunOrchestrator
 {
-    public static class RunOrchestrator
+    [Function("OrchestratorFunction_HelloSequence")]
+    public static async Task OrchestratorFunction_HelloSequence(
+        [OrchestrationTrigger] TaskOrchestrationContext context)
     {
-        [Function("OrchestratorFunction_HelloSequence")]
-        public static async Task OrchestratorFunction_HelloSequence(
-            [OrchestrationTrigger] TaskOrchestrationContext context)
+        var input = context.GetInput<BlobProcessingInputModel>();
+        if (input == null || string.IsNullOrEmpty(input.BlobName))
         {
-            var input = context.GetInput<BlobProcessingInputModel>();
-            if (input == null)
-            {
-                throw new ArgumentNullException(nameof(input), "Input is null in the orchestrator function.");
-            }
+            throw new ArgumentNullException(nameof(input), "Input is null or missing BlobName.");
+        }
 
-            byte[] blobContent;
-            try
-            {
-                blobContent = Convert.FromBase64String(input.BlobBase64);
-            }
-            catch (FormatException ex)
-            {
-                throw new ArgumentException("Invalid Base64 string in the input blob.", ex);
-            }
-            context.SetCustomStatus($"Processing blob: {input.Name}");
+        context.SetCustomStatus($"Processing blob: {input.BlobName}");
 
-            try
+        try
+        {
+            // Step 1: Fetch blob content in an activity function
+            byte[] blobContent = await context.CallActivityAsync<byte[]>("DownloadBlobActivity", input.BlobName);
+
+            // Step 2: Split blob into batches
+            var batches = await context.CallActivityAsync<List<byte[]>>("SplitBlobIntoBatches", blobContent);
+
+            // Step 3: Process each batch
+            foreach (var batch in batches)
             {
-                var batches = await context.CallActivityAsync<List<byte[]>>("SplitBlobIntoBatches", blobContent);
-                foreach (var batch in batches)
-                {
-                    await context.CallActivityAsync("ProcessBatch", batch);
-                    await context.CreateTimer(context.CurrentUtcDateTime.AddMinutes(1), CancellationToken.None);
-                }
-            }
-            catch (Exception ex)
-            {
-                context.SetCustomStatus($"Error in orchestration: {ex.Message}");
-                throw;
+                await context.CallActivityAsync("ProcessBatch", batch);
+                await context.CreateTimer(context.CurrentUtcDateTime.AddMinutes(1), CancellationToken.None);
             }
         }
+        catch (Exception ex)
+        {
+            context.SetCustomStatus($"Error in orchestration: {ex.Message}");
+            throw;
+        }
     }
-
 }
