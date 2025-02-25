@@ -3,44 +3,53 @@ using System.IO;
 using System.Threading.Tasks;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.WebJobs.Extensions.DurableTask;
+using Microsoft.Azure.WebJobs.Extensions.DurableTask.ContextImplementations;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace SmarTrak
 {
-    public static class BlobTriggerFunction
+    public class BlobTriggerFunction
     {
+        private readonly IDurableClientFactory _durableClientFactory;
+        private readonly ILogger<BlobTriggerFunction> _logger;
+
+        public BlobTriggerFunction(IDurableClientFactory durableClientFactory, ILogger<BlobTriggerFunction> logger)
+        {
+            _durableClientFactory = durableClientFactory;
+            _logger = logger;
+        }
+
         [Function("BlobTriggerFunction")]
-        public static async Task Run(
+        public async Task Run(
             [BlobTrigger("zip-container/{name}", Connection = "AzureWebJobsStorage")] byte[] zipData,
             string name,
-            FunctionContext context,
-            [Microsoft.Azure.Functions.Worker.DurableClient] IDurableOrchestrationClient orchestrationClient)
+            FunctionContext context)
         {
-            var logger = context.GetLogger("ExtractAndProcessZip");
-
             if (zipData == null || zipData.Length == 0)
             {
-                logger.LogError("ZIP file data is null or empty.");
-                return;
-            }
-
-            if (orchestrationClient == null)
-            {
-                logger.LogError("Durable Orchestration Client is null.");
+                _logger.LogError("ZIP file data is null or empty.");
                 return;
             }
 
             try
             {
-                logger.LogInformation($"ZIP file {name} uploaded, starting processing...");
+                var durableClient = _durableClientFactory.CreateClient();
+                if (durableClient == null)
+                {
+                    _logger.LogError("Durable Orchestration Client is null.");
+                    return;
+                }
+
+                _logger.LogInformation($"ZIP file {name} uploaded, starting processing...");
                 using var zipStream = new MemoryStream(zipData);
 
-                string instanceId = await orchestrationClient.StartNewAsync("Orchestrator", zipStream);
-                logger.LogInformation($"Started Durable Orchestrator with ID = '{instanceId}'");
+                string instanceId = await durableClient.StartNewAsync("Orchestrator", zipStream);
+                _logger.LogInformation($"Started Durable Orchestrator with ID = '{instanceId}'");
             }
             catch (Exception ex)
             {
-                logger.LogError($"Error starting Durable Orchestrator: {ex.Message}");
+                _logger.LogError($"Error starting Durable Orchestrator: {ex.Message}");
             }
         }
     }

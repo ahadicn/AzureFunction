@@ -1,9 +1,11 @@
 using Microsoft.Azure.Functions.Worker.Builder;
+using Microsoft.Azure.Functions.Worker.Extensions.DurableTask;
 using Microsoft.Azure.Functions.Worker.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Azure.Storage.Blobs;
+using Microsoft.Azure.WebJobs.Extensions.DurableTask.ContextImplementations;
 
 var builder = FunctionsApplication.CreateBuilder(args);
 
@@ -23,6 +25,7 @@ var host = new HostBuilder()
         // Register BlobServiceClient
         string blobConnectionString = Environment.GetEnvironmentVariable("AzureWebJobsStorage");
         services.AddSingleton(new BlobServiceClient(blobConnectionString));
+        services.AddSingleton<IDurableClientFactory, DurableClientFactory>(); // 
     })
     .Build();
 host.Run();
