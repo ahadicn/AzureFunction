@@ -25,7 +25,8 @@ var host = new HostBuilder()
         // Register BlobServiceClient
         string blobConnectionString = Environment.GetEnvironmentVariable("AzureWebJobsStorage");
         services.AddSingleton(new BlobServiceClient(blobConnectionString));
-        services.AddSingleton<IDurableClientFactory, DurableClientFactory>(); // 
+        services.AddSingleton<IDurableClientFactory, DurableClientFactory>();
+        services.AddLogging();
     })
     .Build();
 host.Run();

@@ -1,8 +1,13 @@
 ﻿using System;
+using System.IO;
+using System.IO.Compression;
+using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using Azure.Storage.Blobs;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
+using SmarTrak.Services;
 
 namespace SmarTrak
 {
@@ -14,34 +19,45 @@ namespace SmarTrak
             FunctionContext context)
         {
             var logger = context.GetLogger("QueueTriggerFunction");
-            logger.LogInformation($"Queue trigger function processed message: {queueMessage}");
+            logger.LogInformation($"Queue message received: {queueMessage}");
 
             try
             {
-                // Deserialize the message
                 var messageData = JsonSerializer.Deserialize<QueueMessage>(queueMessage);
-
                 if (messageData == null || string.IsNullOrEmpty(messageData.FileName))
                 {
-                    logger.LogError("Invalid message format: Missing FileName.");
+                    logger.LogError("Invalid message: Missing FileName.");
                     return;
                 }
 
-                logger.LogInformation($"Processing file: {messageData.FileName}");
-                // TODO: Add your processing logic here
-            }
-            catch (JsonException ex)
-            {
-                logger.LogError($"JSON Deserialization Error: {ex.Message}");
+                string storageConnectionString = Environment.GetEnvironmentVariable("AzureWebJobsStorage");
+                var blobClient = new BlobContainerClient(storageConnectionString, "zip-container");
+                var blob = blobClient.GetBlobClient(messageData.FileName);
+
+                using var memoryStream = new MemoryStream();
+                await blob.DownloadToAsync(memoryStream);
+                memoryStream.Position = 0;
+
+                using var archive = new ZipArchive(memoryStream, ZipArchiveMode.Read);
+                foreach (var entry in archive.Entries)
+                {
+                    if (entry.FullName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+                    {
+                        logger.LogInformation($"Extracting file: {entry.FullName}");
+
+                        using var xlsxStream = entry.Open();
+                        var result = await ExcelProcessor.ProcessXlsx(xlsxStream);
+                        logger.LogInformation($"Processed {result} records from {entry.FullName}");
+                    }
+                }
             }
             catch (Exception ex)
             {
-                logger.LogError($"Unexpected Error: {ex.Message}");
+                logger.LogError($"Processing error: {ex.Message}");
             }
         }
     }
 
-    // Define a strongly-typed model for the queue message
     public class QueueMessage
     {
         public string FileName { get; set; }
