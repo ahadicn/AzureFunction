@@ -1,47 +1,44 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Azure.Functions.Worker;
-using Microsoft.DurableTask;
+using Microsoft.Azure.WebJobs.Extensions.DurableTask;
 using Microsoft.Extensions.Logging;
 
 namespace SmarTrak
 {
-    public static class RunOrchestrator
+    public static class OrchestratorFunction
     {
-        [Function("OrchestratorFunction_HelloSequence")]
-        public static async Task OrchestratorFunction_HelloSequence(
-            [OrchestrationTrigger] TaskOrchestrationContext context)
+        [Function("OrchestratorFunction")]
+        public static async Task<List<string>> RunOrchestrator(
+            [Microsoft.Azure.Functions.Worker.OrchestrationTrigger] IDurableOrchestrationContext context)
         {
-            var blobName = context.GetInput<string>();
+            var inputJson = context.GetInput<string>();
 
-            if (string.IsNullOrEmpty(blobName))
+            if (string.IsNullOrWhiteSpace(inputJson))
+                throw new ArgumentException("Received empty input JSON.");
+
+            var input = JsonSerializer.Deserialize<BlobProcessingInputModel>(inputJson);
+            if (input == null)
+                throw new ArgumentException("Deserialization returned null.");
+
+            var outputs = new List<string>();
+
+            // Step 1: Download Blob
+            byte[] zipData = await context.CallActivityAsync<byte[]>("DownloadBlobActivity", input);
+
+            // Step 2: Extract XLSX files
+            List<byte[]> xlsxFiles = await context.CallActivityAsync<List<byte[]>>("ExtractXlsxFromZipActivity", zipData);
+
+            // Step 3: Process Excel files
+            foreach (var xlsx in xlsxFiles)
             {
-                throw new ArgumentNullException(nameof(blobName), "Blob name cannot be null or empty.");
+                string result = await context.CallActivityAsync<string>("ProcessExcelActivity", xlsx);
+                outputs.Add(result);
             }
 
-            context.SetCustomStatus($"Processing blob: {blobName}");
-
-            try
-            {
-                // ✅ Step 1: Download Blob
-                byte[] blobContent = await context.CallActivityAsync<byte[]>("DownloadBlobActivity", blobName);
-
-                // ✅ Step 2: Split ZIP into Excel file batches
-                var batches = await context.CallActivityAsync<List<byte[]>>("SplitBlobIntoBatches", blobContent);
-
-                // ✅ Step 3: Process Each Batch
-                foreach (var batch in batches)
-                {
-                    await context.CallActivityAsync("ProcessBatch", batch);
-                    await context.CreateTimer(context.CurrentUtcDateTime.AddMinutes(1), CancellationToken.None);
-                }
-            }
-            catch (Exception ex)
-            {
-                context.SetCustomStatus($"Error in orchestration: {ex.Message}");
-                throw;
-            }
+            return outputs;
         }
     }
 }

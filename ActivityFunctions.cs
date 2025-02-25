@@ -23,26 +23,22 @@ namespace SmarTrak
             _logger = logger;
         }
 
-        // ✅ Step 1: Download Blob from Storage
-        [Function("DownloadBlobActivity")]
-        public async Task<byte[]> DownloadBlobActivity([ActivityTrigger] string blobName)
+        public static class DownloadBlobActivity
         {
-            try
+            [Function("DownloadBlobActivity")]
+            public static async Task<byte[]> Run(
+                [ActivityTrigger] BlobProcessingInputModel input,
+                FunctionContext context)
             {
-                var containerClient = _blobServiceClient.GetBlobContainerClient("zip-container");
-                var blobClient = containerClient.GetBlobClient(blobName);
+                var logger = context.GetLogger("DownloadBlobActivity");
+                logger.LogInformation($"Downloading blob: {input.BlobName}");
+
+                string connectionString = Environment.GetEnvironmentVariable("AzureWebJobsStorage");
+                var blobClient = new BlobClient(connectionString, input.Name, input.BlobName);
 
                 using var memoryStream = new MemoryStream();
                 await blobClient.DownloadToAsync(memoryStream);
-
-                _logger.LogInformation($"Downloaded blob: {blobName}");
-
                 return memoryStream.ToArray();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError($"Error downloading blob {blobName}: {ex.Message}");
-                throw;
             }
         }
 

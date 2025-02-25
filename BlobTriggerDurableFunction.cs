@@ -1,38 +1,36 @@
 ﻿using System;
+using System.IO;
+using System.Text.Json;
 using System.Threading.Tasks;
+using Azure.Storage.Blobs;
 using Microsoft.Azure.Functions.Worker;
-using Microsoft.DurableTask.Client;
 using Microsoft.Extensions.Logging;
+using Microsoft.Azure.Functions.Worker.Http;
+using Microsoft.Azure.WebJobs.Extensions.DurableTask;
+using DurableClientAttribute = Microsoft.Azure.Functions.Worker.DurableClientAttribute;
 
 namespace SmarTrak
 {
-    public class BlobTriggerDurableFunction
+    public static class BlobTriggerFunction
     {
-        private readonly ILogger<BlobTriggerDurableFunction> _logger;
-
-        public BlobTriggerDurableFunction(ILogger<BlobTriggerDurableFunction> logger)
+        [Function("BlobTriggerFunction")]
+        public static async Task Run(
+            [BlobTrigger("zip-container/{name}")] byte[] blobContent,
+            string name,
+            FunctionContext context,
+            [DurableClient] IDurableOrchestrationClient starter)
         {
-            _logger = logger;
-        }
+            var logger = context.GetLogger("BlobTriggerFunction");
+            logger.LogInformation($"BlobTriggerFunction triggered for: {name}");
 
-        [Function("BlobTriggerDurableFunction")]
-        public async Task Run(
-            [BlobTrigger("zip-container/{blobName}")] string blobName,
-            [DurableClient] DurableTaskClient starter)
-        {
-            _logger.LogInformation($"Blob trigger activated: {blobName}");
+            var input = new BlobProcessingInputModel
+            {
+                BlobName = name,
+                Name = "zip-container"
+            };
 
-            try
-            {
-                // ✅ Start Orchestrator (Pass blob name)
-                await starter.ScheduleNewOrchestrationInstanceAsync("OrchestratorFunction_HelloSequence", blobName);
-                _logger.LogInformation($"Started Orchestrator for blob: {blobName}");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError($"Error triggering orchestrator: {ex.Message}");
-                throw;
-            }
+            string jsonInput = JsonSerializer.Serialize(input);
+            await starter.StartNewAsync("OrchestratorFunction", jsonInput);
         }
     }
 }
