@@ -1,30 +1,29 @@
 ﻿using System;
 using System.IO;
+using System.Text.Json;
 using System.Threading.Tasks;
+using Azure.Storage.Queues;
 using Microsoft.Azure.Functions.Worker;
-using Microsoft.Azure.WebJobs.Extensions.DurableTask;
-using Microsoft.Azure.WebJobs.Extensions.DurableTask.ContextImplementations;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace SmarTrak
 {
     public class BlobTriggerFunction
     {
-        private readonly IDurableClientFactory _durableClientFactory;
+        private readonly QueueClient _queueClient;
         private readonly ILogger<BlobTriggerFunction> _logger;
 
-        public BlobTriggerFunction(IDurableClientFactory durableClientFactory, ILogger<BlobTriggerFunction> logger)
+        public BlobTriggerFunction(ILogger<BlobTriggerFunction> logger)
         {
-            _durableClientFactory = durableClientFactory;
             _logger = logger;
+            _queueClient = new QueueClient(Environment.GetEnvironmentVariable("AzureWebJobsStorage"), "zip-processing-queue");
+            _queueClient.CreateIfNotExists();
         }
 
         [Function("BlobTriggerFunction")]
         public async Task Run(
             [BlobTrigger("zip-container/{name}", Connection = "AzureWebJobsStorage")] byte[] zipData,
-            string name,
-            FunctionContext context)
+            string name)
         {
             if (zipData == null || zipData.Length == 0)
             {
@@ -34,22 +33,16 @@ namespace SmarTrak
 
             try
             {
-                var durableClient = _durableClientFactory.CreateClient();
-                if (durableClient == null)
-                {
-                    _logger.LogError("Durable Orchestration Client is null.");
-                    return;
-                }
+                _logger.LogInformation($"ZIP file {name} uploaded, adding message to queue...");
 
-                _logger.LogInformation($"ZIP file {name} uploaded, starting processing...");
-                using var zipStream = new MemoryStream(zipData);
+                var message = JsonSerializer.Serialize(new { FileName = name });
+                await _queueClient.SendMessageAsync(Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(message)));
 
-                string instanceId = await durableClient.StartNewAsync("Orchestrator", zipStream);
-                _logger.LogInformation($"Started Durable Orchestrator with ID = '{instanceId}'");
+                _logger.LogInformation($"Added message to queue for {name}");
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error starting Durable Orchestrator: {ex.Message}");
+                _logger.LogError($"Error adding message to queue: {ex.Message}");
             }
         }
     }
