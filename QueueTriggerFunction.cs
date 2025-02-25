@@ -1,65 +1,49 @@
 ﻿using System;
-using System.IO;
-using System.IO.Compression;
 using System.Text.Json;
 using System.Threading.Tasks;
-using Azure.Storage.Blobs;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.Logging;
 
 namespace SmarTrak
 {
-    public class QueueTriggerFunction
+    public static class QueueTriggerFunction
     {
-        private readonly BlobServiceClient _blobServiceClient;
-        private readonly ILogger<QueueTriggerFunction> _logger;
-
-        public QueueTriggerFunction(ILogger<QueueTriggerFunction> logger)
-        {
-            _logger = logger;
-            _blobServiceClient = new BlobServiceClient(Environment.GetEnvironmentVariable("AzureWebJobsStorage"));
-        }
-
         [Function("QueueTriggerFunction")]
-        public async Task Run(
-            [QueueTrigger("zip-processing-queue", Connection = "AzureWebJobsStorage")] string queueMessage)
+        public static async Task Run(
+            [QueueTrigger("zip-processing-queue", Connection = "AzureWebJobsStorage")] string queueMessage,
+            FunctionContext context)
         {
-            var message = JsonSerializer.Deserialize<dynamic>(queueMessage);
-            string fileName = message?.FileName;
-
-            if (string.IsNullOrEmpty(fileName))
-            {
-                _logger.LogError("Invalid queue message.");
-                return;
-            }
+            var logger = context.GetLogger("QueueTriggerFunction");
+            logger.LogInformation($"Queue trigger function processed message: {queueMessage}");
 
             try
             {
-                _logger.LogInformation($"Processing ZIP file: {fileName}");
+                // Deserialize the message
+                var messageData = JsonSerializer.Deserialize<QueueMessage>(queueMessage);
 
-                var containerClient = _blobServiceClient.GetBlobContainerClient("zip-container");
-                var blobClient = containerClient.GetBlobClient(fileName);
-
-                using var memoryStream = new MemoryStream();
-                await blobClient.DownloadToAsync(memoryStream);
-                memoryStream.Position = 0;
-
-                using var archive = new ZipArchive(memoryStream);
-                foreach (var entry in archive.Entries)
+                if (messageData == null || string.IsNullOrEmpty(messageData.FileName))
                 {
-                    if (entry.FullName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
-                    {
-                        _logger.LogInformation($"Extracting: {entry.FullName}");
-                        // TODO: Process XLSX and insert into SQL Server
-                    }
+                    logger.LogError("Invalid message format: Missing FileName.");
+                    return;
                 }
 
-                _logger.LogInformation($"Finished processing {fileName}");
+                logger.LogInformation($"Processing file: {messageData.FileName}");
+                // TODO: Add your processing logic here
+            }
+            catch (JsonException ex)
+            {
+                logger.LogError($"JSON Deserialization Error: {ex.Message}");
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error processing ZIP file: {ex.Message}");
+                logger.LogError($"Unexpected Error: {ex.Message}");
             }
         }
+    }
+
+    // Define a strongly-typed model for the queue message
+    public class QueueMessage
+    {
+        public string FileName { get; set; }
     }
 }
