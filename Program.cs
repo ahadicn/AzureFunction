@@ -3,6 +3,7 @@ using Microsoft.Azure.Functions.Worker.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Azure.Storage.Blobs;
 
 var builder = FunctionsApplication.CreateBuilder(args);
 
@@ -17,6 +18,12 @@ builder.ConfigureFunctionsWebApplication();
 
 var host = new HostBuilder()
     .ConfigureFunctionsWorkerDefaults()
+    .ConfigureServices(services =>
+    {
+        // Register BlobServiceClient
+        string blobConnectionString = Environment.GetEnvironmentVariable("AzureWebJobsStorage");
+        services.AddSingleton(new BlobServiceClient(blobConnectionString));
+    })
     .Build();
 host.Run();
 
