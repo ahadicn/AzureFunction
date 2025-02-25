@@ -15,15 +15,19 @@ namespace SmarTrak
     {
         [Function("BlobTriggerFunction")]
         public static async Task Run(
-            [BlobTrigger("zip-container/{name}", Connection = "AzureWebJobsStorage")] Stream zipStream,
+            [BlobTrigger("zip-container/{name}", Connection = "AzureWebJobsStorage")] ReadOnlyMemory<byte> zipData,
             string name,
             FunctionContext context,
-            [DurableClient] IDurableOrchestrationClient starter,
+            [DurableClient] IDurableOrchestrationClient orchestrationClient,
             ILogger log)
         {
-            log.LogInformation($"ZIP file {name} uploaded, starting processing...");
-            string instanceId = await starter.StartNewAsync("OrchestratorFunction", zipStream);
-            log.LogInformation($"Started Durable Orchestrator with ID = '{instanceId}'");
+            var logger = context.GetLogger("ExtractAndProcessZip");
+            logger.LogInformation($"ZIP file {name} uploaded, starting processing...");
+
+            using var zipStream = new MemoryStream(zipData.ToArray());
+
+            string instanceId = await orchestrationClient.StartNewAsync("Orchestrator", zipStream);
+            logger.LogInformation($"Started Durable Orchestrator with ID = '{instanceId}'");
         }
     }
 }
