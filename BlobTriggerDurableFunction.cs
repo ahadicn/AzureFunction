@@ -1,5 +1,4 @@
 using System;
-using System.IO;
 using System.Threading.Tasks;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.DurableTask.Client;
@@ -14,22 +13,17 @@ namespace SmarTrak
 
         [Function("BlobTriggerDurableFunction")]
         public async Task Run(
-            [BlobTrigger("zip-container/{name}")] Stream blobStream,
+            [BlobTrigger("zip-container/{name}")] ReadOnlyMemory<byte> blobContent,
             string name,
             [DurableClient] DurableTaskClient starter)
         {
             _logger.LogInformation($"Blob trigger activated: {name}");
-            byte[] blobContent;
-            using (MemoryStream memoryStream = new MemoryStream())
-            {
-                await blobStream.CopyToAsync(memoryStream);
-                blobContent = memoryStream.ToArray();
-            }
 
+            byte[] blobBytes = blobContent.ToArray();
             string blobBase64;
             try
             {
-                blobBase64 = Convert.ToBase64String(blobContent);
+                blobBase64 = Convert.ToBase64String(blobBytes);
             }
             catch (Exception ex)
             {
