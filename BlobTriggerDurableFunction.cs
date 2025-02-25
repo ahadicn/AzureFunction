@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Threading.Tasks;
-using Azure.Storage.Blobs;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.DurableTask.Client;
 using Microsoft.Extensions.Logging;
@@ -25,10 +24,8 @@ namespace SmarTrak
 
             try
             {
-                // ✅ Pass a properly formatted input model instead of just the string
-                var inputModel = new BlobProcessingInputModel { BlobName = blobName };
-
-                await starter.ScheduleNewOrchestrationInstanceAsync("OrchestratorFunction_HelloSequence", inputModel);
+                // ✅ Start Orchestrator (Pass blob name)
+                await starter.ScheduleNewOrchestrationInstanceAsync("OrchestratorFunction_HelloSequence", blobName);
                 _logger.LogInformation($"Started Orchestrator for blob: {blobName}");
             }
             catch (Exception ex)

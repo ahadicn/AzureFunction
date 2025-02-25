@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
@@ -8,9 +8,7 @@ using Azure.Storage.Blobs;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
-using Newtonsoft.Json;
 using OfficeOpenXml;
-using static SmarTrak.RunNormalFunction;
 
 namespace SmarTrak
 {
@@ -25,7 +23,7 @@ namespace SmarTrak
             _logger = logger;
         }
 
-        // ?? New Function: Download Blob from Storage
+        // ✅ Step 1: Download Blob from Storage
         [Function("DownloadBlobActivity")]
         public async Task<byte[]> DownloadBlobActivity([ActivityTrigger] string blobName)
         {
@@ -36,7 +34,9 @@ namespace SmarTrak
 
                 using var memoryStream = new MemoryStream();
                 await blobClient.DownloadToAsync(memoryStream);
+
                 _logger.LogInformation($"Downloaded blob: {blobName}");
+
                 return memoryStream.ToArray();
             }
             catch (Exception ex)
@@ -46,15 +46,13 @@ namespace SmarTrak
             }
         }
 
-        // ?? Splitting Blob into Excel File Batches
+        // ✅ Step 2: Split ZIP into Excel Batches
         [Function("SplitBlobIntoBatches")]
         public static List<byte[]> SplitBlobIntoBatches(
             [ActivityTrigger] byte[] blobContent,
             FunctionContext context)
         {
             var logger = context.GetLogger("SplitBlobIntoBatches");
-            logger.LogInformation("Splitting blob into batches.");
-
             var batches = new List<byte[]>();
 
             try
@@ -72,21 +70,20 @@ namespace SmarTrak
                         batches.Add(memoryStream.ToArray());
                     }
                 }
+                logger.LogInformation($"Extracted {batches.Count} Excel files.");
             }
             catch (Exception ex)
             {
-                logger.LogError($"Error splitting blob into batches: {ex.Message}");
+                logger.LogError($"Error splitting ZIP: {ex.Message}");
                 throw;
             }
 
             return batches;
         }
 
-        // ?? Process Each Batch
+        // ✅ Step 3: Process Each Batch
         [Function("ProcessBatch")]
-        public static async Task ProcessBatch(
-            [ActivityTrigger] byte[] batchContent,
-            FunctionContext context)
+        public static async Task ProcessBatch([ActivityTrigger] byte[] batchContent, FunctionContext context)
         {
             var logger = context.GetLogger("ProcessBatch");
             try
@@ -101,48 +98,31 @@ namespace SmarTrak
             }
         }
 
-        // ?? Process Excel File and Insert into SQL
+        // ✅ Step 4: Process Excel and Insert into SQL
         private static async Task ProcessExcel(Stream excelStream, ILogger logger)
         {
             logger.LogInformation("Processing Excel file.");
+
             try
             {
-                var columnMappings = await LoadColumnMappingsAsync("columnMappings.json");
-                if (columnMappings == null)
-                {
-                    logger.LogError("Failed to load column mappings.");
-                    return;
-                }
-
                 ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
                 using var package = new ExcelPackage(excelStream);
                 var worksheet = package.Workbook.Worksheets[0];
 
                 int rowCount = worksheet.Dimension.Rows;
-                var columnIndices = new Dictionary<string, int>();
-                for (int col = 1; col <= worksheet.Dimension.Columns; col++)
-                {
-                    var columnName = worksheet.Cells[1, col].Text.Trim();
-                    foreach (var mapping in columnMappings.Mappings)
-                    {
-                        if (columnName.Equals(mapping.ExcelColumn, StringComparison.OrdinalIgnoreCase))
-                        {
-                            columnIndices[mapping.SqlColumn] = col;
-                        }
-                    }
-                }
-
                 var records = new List<Dictionary<string, object>>();
+
                 for (int row = 2; row <= rowCount; row++)
                 {
-                    var record = new Dictionary<string, object>();
-                    foreach (var mapping in columnMappings.Mappings)
+                    var record = new Dictionary<string, object>
                     {
-                        if (columnIndices.TryGetValue(mapping.SqlColumn, out int columnIndex))
-                        {
-                            record[mapping.SqlColumn] = worksheet.Cells[row, columnIndex].GetValue<object>();
-                        }
-                    }
+                        ["EmployeeId"] = worksheet.Cells[row, 1].Text,
+                        ["Name"] = worksheet.Cells[row, 2].Text,
+                        ["Address"] = worksheet.Cells[row, 3].Text,
+                        ["Gender"] = worksheet.Cells[row, 4].Text,
+                        ["Department"] = worksheet.Cells[row, 5].Text
+                    };
+
                     records.Add(record);
                 }
 
@@ -155,15 +135,10 @@ namespace SmarTrak
             }
         }
 
-        // ?? Insert Data into SQL
+        // ✅ Step 5: Insert Data into SQL
         private static async Task InsertRecordsIntoDatabase(List<Dictionary<string, object>> records, ILogger logger)
         {
             var connectionString = Environment.GetEnvironmentVariable("SQLConnectionString");
-            if (string.IsNullOrEmpty(connectionString))
-            {
-                logger.LogError("Missing SQL connection string.");
-                return;
-            }
 
             try
             {
@@ -181,31 +156,15 @@ namespace SmarTrak
                     {
                         cmd.Parameters.AddWithValue($"@{kvp.Key}", kvp.Value ?? DBNull.Value);
                     }
+
                     await cmd.ExecuteNonQueryAsync();
-                    logger.LogInformation("Inserted record successfully.");
                 }
+                logger.LogInformation("Inserted records successfully.");
             }
             catch (Exception ex)
             {
                 logger.LogError($"Error inserting records into database: {ex.Message}");
                 throw;
-            }
-        }
-
-        // ?? Load Column Mappings from JSON
-        private static async Task<ColumnMappings> LoadColumnMappingsAsync(string filePath)
-        {
-            var FilePath = Path.Combine(Directory.GetCurrentDirectory(), filePath);
-            try
-            {
-                using var reader = new StreamReader(FilePath);
-                var json = await reader.ReadToEndAsync();
-                return JsonConvert.DeserializeObject<ColumnMappings>(json);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Error loading column mappings: {ex.Message}");
-                return null;
             }
         }
     }
